@@ -1,3 +1,5 @@
+const https = require("https");
+
 // Fetch helper with promise, timeout, and required Referer for Google Cloud API Key
 const httpsGet = (urlStr) => {
   return new Promise((resolve, reject) => {
