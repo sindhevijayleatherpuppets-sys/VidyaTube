@@ -11,7 +11,9 @@ const GoogleSignInButton = ({ text = "signin_with", onError }) => {
   const [hasClientId, setHasClientId] = useState(true);
 
   useEffect(() => {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    const clientId =
+      import.meta.env.VITE_GOOGLE_CLIENT_ID ||
+      "118337636187-r8ae5m2es5l1b6ikiph4f6msfplntoc1.apps.googleusercontent.com";
 
     if (!clientId) {
       setHasClientId(false);
@@ -85,9 +87,11 @@ const GoogleSignInButton = ({ text = "signin_with", onError }) => {
   }, [login, navigate, text, onError]);
 
   const handleConfigNotice = () => {
-    alert(
-      "Google Sign-In Setup Required:\n\nPlease add your Google OAuth Client ID to client/.env as:\nVITE_GOOGLE_CLIENT_ID=your_client_id.apps.googleusercontent.com\n\nEnsure http://localhost:5173 is added to 'Authorized JavaScript origins' in Google Cloud Console."
-    );
+    if (onError) {
+      onError(
+        "Google Sign-In Setup Required: Please add your Google OAuth Client ID in your project settings."
+      );
+    }
   };
 
   if (!hasClientId) {
