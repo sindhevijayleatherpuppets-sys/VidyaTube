@@ -1,6 +1,9 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
+const JWT_SECRET =
+  process.env.JWT_SECRET || "vidytube_production_jwt_super_secure_secret_key_2026";
+
 /**
  * Protects a route: requires a valid Bearer JWT in the Authorization header.
  * Attaches the authenticated user (without password) to req.user.
@@ -18,7 +21,7 @@ const protect = async (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
     const user = await User.findById(decoded.id);
 
     if (!user) {
@@ -39,7 +42,7 @@ const adminOnly = (req, res, next) => {
   if (req.user && req.user.role === "admin") {
     return next();
   }
-  return res.status(403).json({ message: "Admin access required" });
+  return res.status(403).json({ message: "Forbidden: Admin access required" });
 };
 
 /**
@@ -52,7 +55,7 @@ const optionalAuth = async (req, res, next) => {
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const token = authHeader.split(" ")[1];
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, JWT_SECRET);
       const user = await User.findById(decoded.id);
       if (user) req.user = user;
     } catch (error) {
