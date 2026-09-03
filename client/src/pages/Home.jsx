@@ -6,7 +6,14 @@ import SkeletonCard from "../components/SkeletonCard.jsx";
 import { fetchVideos, fetchShorts, fetchRecommendations } from "../services/videoService";
 import { getYouTubeTrending, getYouTubeShorts } from "../services/youtubeService";
 import { useAuth } from "../context/AuthContext.jsx";
-import { CATEGORIES, mediaUrl, formatViews } from "../utils/format";
+import {
+  CATEGORIES,
+  mediaUrl,
+  safeThumbnailUrl,
+  handleThumbnailLoad,
+  DEFAULT_POSTER,
+  formatViews,
+} from "../utils/format";
 
 const CATEGORY_MAP = {
   Music: "10",
@@ -251,10 +258,15 @@ const Home = () => {
               <Link key={short._id} to={`/shorts?id=${short._id}`} className="short-card">
                 <div className="short-thumb-wrap">
                   <img
-                    src={mediaUrl(short.thumbnailUrl)}
+                    src={safeThumbnailUrl(short.thumbnailUrl, short.youtubeVideoId)}
                     alt={short.title}
                     className="short-thumb"
                     loading="lazy"
+                    onLoad={handleThumbnailLoad}
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = DEFAULT_POSTER;
+                    }}
                   />
                   <span className="video-duration-badge" style={{ background: "var(--accent)" }}>
                     SHORT

@@ -2,11 +2,32 @@ const SERVER_ORIGIN = (
   import.meta.env.VITE_API_URL || "https://vidya-tube-app.onrender.com/api"
 ).replace(/\/api\/?$/, "");
 
+export const DEFAULT_POSTER =
+  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=60";
+
 // Video/thumbnail URLs can be relative or absolute external web URLs
 export const mediaUrl = (path) => {
   if (!path) return "";
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
   return `${SERVER_ORIGIN}${path.startsWith("/") ? "" : "/"}${path}`;
+};
+
+// Converts maxresdefault to reliable hqdefault to prevent YouTube 404 grey placeholders
+export const safeThumbnailUrl = (path, ytId = "") => {
+  if (!path && ytId) return `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`;
+  if (!path) return DEFAULT_POSTER;
+  let url = mediaUrl(path);
+  if (url.includes("maxresdefault.jpg")) {
+    url = url.replace("maxresdefault.jpg", "hqdefault.jpg");
+  }
+  return url;
+};
+
+// Detects YouTube's 120x90 grey placeholder and swaps it for high-res clean poster
+export const handleThumbnailLoad = (e, fallback = DEFAULT_POSTER) => {
+  if (e?.target && e.target.naturalWidth <= 120 && e.target.naturalHeight <= 90) {
+    e.target.src = fallback;
+  }
 };
 
 export const formatViews = (views) => {

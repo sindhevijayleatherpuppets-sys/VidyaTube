@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { mediaUrl, formatViews, timeAgo } from "../utils/format";
+import { safeThumbnailUrl, handleThumbnailLoad, DEFAULT_POSTER, formatViews, timeAgo } from "../utils/format";
 import { fetchMyPlaylists, addVideoToPlaylist } from "../services/playlistService";
 import { useAuth } from "../context/AuthContext.jsx";
 
@@ -61,14 +61,14 @@ const VideoCard = ({ video, rank }) => {
       <Link to={`/watch/${video._id}`} className="video-card">
         <div className="video-thumb-wrap">
           <img
-            src={mediaUrl(video.thumbnailUrl)}
+            src={safeThumbnailUrl(video.thumbnailUrl, video.youtubeVideoId)}
             alt={video.title}
             className="video-thumb"
             loading="lazy"
+            onLoad={handleThumbnailLoad}
             onError={(e) => {
               e.target.onerror = null;
-              e.target.src =
-                "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=60";
+              e.target.src = DEFAULT_POSTER;
             }}
           />
           <span className="video-duration-badge">

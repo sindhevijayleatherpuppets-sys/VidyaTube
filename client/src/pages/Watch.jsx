@@ -19,9 +19,18 @@ import {
 } from "../services/videoService";
 import { toggleSubscribe } from "../services/userService";
 import { fetchMyPlaylists, addVideoToPlaylist, createPlaylist } from "../services/playlistService";
-import { getYouTubeVideoDetails } from "../services/youtubeService";
 import { toggleFavorite, toggleWatchLater, recordWatchHistory } from "../services/libraryService";
-import { mediaUrl, formatViews, formatDate, timeAgo, formatSubscribers, REPORT_REASONS } from "../utils/format";
+import {
+  mediaUrl,
+  safeThumbnailUrl,
+  handleThumbnailLoad,
+  DEFAULT_POSTER,
+  formatViews,
+  formatDate,
+  timeAgo,
+  formatSubscribers,
+  REPORT_REASONS,
+} from "../utils/format";
 
 const EMOJIS = ["👍", "🔥", "❤️", "😂", "👏", "🎉", "🚀", "💡", "💯", "🤯", "🙌", "✨"];
 
@@ -1061,7 +1070,17 @@ const Watch = () => {
           {related.map((rel) => (
             <Link key={rel._id} to={`/watch/${rel._id}`} className="related-video-card">
               <div className="related-thumb-wrap">
-                <img src={mediaUrl(rel.thumbnailUrl)} alt={rel.title} className="video-thumb" />
+                <img
+                  src={safeThumbnailUrl(rel.thumbnailUrl, rel.youtubeVideoId)}
+                  alt={rel.title}
+                  className="video-thumb"
+                  loading="lazy"
+                  onLoad={handleThumbnailLoad}
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = DEFAULT_POSTER;
+                  }}
+                />
                 <span className="video-duration-badge">{rel.duration || "HD"}</span>
               </div>
               <div style={{ flex: 1, overflow: "hidden" }}>

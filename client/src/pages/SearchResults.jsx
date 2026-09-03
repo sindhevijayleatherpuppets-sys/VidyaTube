@@ -4,7 +4,15 @@ import AppShell from "../components/AppShell.jsx";
 import SkeletonCard from "../components/SkeletonCard.jsx";
 import { searchYouTubeVideos } from "../services/youtubeService";
 import { fetchVideos } from "../services/videoService";
-import { mediaUrl, formatViews, timeAgo, formatSubscribers } from "../utils/format";
+import {
+  mediaUrl,
+  safeThumbnailUrl,
+  handleThumbnailLoad,
+  DEFAULT_POSTER,
+  formatViews,
+  timeAgo,
+  formatSubscribers,
+} from "../utils/format";
 
 const SearchResults = () => {
   const [searchParams] = useSearchParams();
@@ -393,8 +401,14 @@ const SearchResults = () => {
                     }}
                   >
                     <img
-                      src={mediaUrl(v.thumbnailUrl)}
+                      src={safeThumbnailUrl(v.thumbnailUrl, v.youtubeVideoId)}
                       alt={v.title}
+                      loading="lazy"
+                      onLoad={handleThumbnailLoad}
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = DEFAULT_POSTER;
+                      }}
                       style={{ width: "100%", height: "100%", objectFit: "cover" }}
                     />
                     <span
