@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import AppShell from "../components/AppShell.jsx";
 import SkeletonCard from "../components/SkeletonCard.jsx";
@@ -90,6 +90,22 @@ const SearchResults = () => {
       setLoadingMore(false);
     }
   };
+
+  const searchObserverRef = useRef(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loading && !loadingMore && nextPageToken) {
+          handleLoadMore();
+        }
+      },
+      { threshold: 0.1, rootMargin: "250px" }
+    );
+
+    if (searchObserverRef.current) observer.observe(searchObserverRef.current);
+    return () => observer.disconnect();
+  }, [loading, loadingMore, nextPageToken]);
 
   const filteredList = [
     ...(sourceFilter === "all" || sourceFilter === "native" ? nativeVideos : []),
@@ -452,16 +468,19 @@ const SearchResults = () => {
               );
             })}
 
-            {/* Load More Button for Real-Time Pagination */}
+            {/* Load More Button and Infinite Scroll Trigger */}
             {nextPageToken && (
-              <div style={{ textAlign: "center", marginTop: "24px", marginBottom: "16px" }}>
+              <div
+                ref={searchObserverRef}
+                style={{ textAlign: "center", marginTop: "24px", marginBottom: "16px", minHeight: "40px" }}
+              >
                 <button
                   className="btn btn-secondary"
                   onClick={handleLoadMore}
                   disabled={loadingMore}
                   style={{ padding: "10px 28px", fontWeight: 600 }}
                 >
-                  {loadingMore ? "Loading more videos..." : "Load More Results"}
+                  {loadingMore ? "⚡ Loading more results..." : "Load More Results"}
                 </button>
               </div>
             )}

@@ -1,6 +1,27 @@
 import api from "./api";
 
+const localCache = new Map();
+const LOCAL_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+const getLocalCached = (key) => {
+  const item = localCache.get(key);
+  if (!item) return null;
+  if (Date.now() > item.expiresAt) {
+    localCache.delete(key);
+    return null;
+  }
+  return item.data;
+};
+
+const setLocalCached = (key, data, ttl = LOCAL_CACHE_TTL) => {
+  localCache.set(key, { data, expiresAt: Date.now() + ttl });
+};
+
 export const fetchVideos = async ({ category, search, isShort, sort, channel } = {}) => {
+  const cacheKey = `v_${category || ""}_${search || ""}_${isShort}_${sort || ""}_${channel || ""}`;
+  const cached = getLocalCached(cacheKey);
+  if (cached) return cached;
+
   const params = {};
   if (category && category !== "All") params.category = category;
   if (search) params.search = search;
@@ -9,17 +30,31 @@ export const fetchVideos = async ({ category, search, isShort, sort, channel } =
   if (channel) params.channel = channel;
 
   const res = await api.get("/videos", { params });
-  return res.data.videos;
+  const videos = res.data.videos || [];
+  setLocalCached(cacheKey, videos);
+  return videos;
 };
 
 export const fetchShorts = async () => {
+  const cacheKey = "shorts_feed";
+  const cached = getLocalCached(cacheKey);
+  if (cached) return cached;
+
   const res = await api.get("/videos/shorts");
-  return res.data.shorts;
+  const shorts = res.data.shorts || [];
+  setLocalCached(cacheKey, shorts);
+  return shorts;
 };
 
 export const fetchVideoById = async (id) => {
+  const cacheKey = `video_${id}`;
+  const cached = getLocalCached(cacheKey);
+  if (cached) return cached;
+
   const res = await api.get(`/videos/${id}`);
-  return res.data.video;
+  const video = res.data.video;
+  if (video) setLocalCached(cacheKey, video);
+  return video;
 };
 
 export const uploadVideo = async (formData, onUploadProgress) => {

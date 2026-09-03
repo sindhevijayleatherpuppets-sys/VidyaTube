@@ -4,8 +4,30 @@ const CLIENT_YOUTUBE_API_KEY =
   import.meta.env.VITE_YOUTUBE_API_KEY ||
   "AIzaSyBDF1RokJqU1NsMhXsgwr1JemhzXoL9fMQ";
 
+// Fast Client-Side In-Memory Cache (0ms latency, zero lag on navigation & category switches)
+const clientCache = new Map();
+const CLIENT_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
+
+const getCached = (key) => {
+  const item = clientCache.get(key);
+  if (!item) return null;
+  if (Date.now() > item.expiresAt) {
+    clientCache.delete(key);
+    return null;
+  }
+  return item.data;
+};
+
+const setCached = (key, data, ttl = CLIENT_CACHE_TTL) => {
+  if (clientCache.size > 300) {
+    const firstKey = clientCache.keys().next().value;
+    clientCache.delete(firstKey);
+  }
+  clientCache.set(key, { data, expiresAt: Date.now() + ttl });
+};
+
 /**
- * Search YouTube and VidyTube videos via backend YouTube service with browser direct fallback
+ * Search YouTube and VidyTube videos via backend YouTube service with browser direct fallback and instant cache
  */
 export const searchYouTubeVideos = async ({
   q = "",
@@ -13,12 +35,17 @@ export const searchYouTubeVideos = async ({
   category = "",
   maxResults = 16,
 }) => {
+  const cacheKey = `search_${(q || "").toLowerCase().trim()}_${pageToken}_${category}_${maxResults}`;
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
   // 1. Try Backend API first
   try {
     const { data } = await api.get("/youtube/search", {
       params: { q, pageToken, category, maxResults },
     });
     if (data && data.videos && data.videos.length > 0) {
+      setCached(cacheKey, data);
       return data;
     }
   } catch (backendErr) {
@@ -83,12 +110,14 @@ export const searchYouTubeVideos = async ({
             };
           });
 
-        return {
+        const result = {
           videos,
           channels: [],
           nextPageToken: ytJson.nextPageToken || null,
           totalResults: ytJson.pageInfo?.totalResults || videos.length,
         };
+        setCached(cacheKey, result);
+        return result;
       }
     } catch (directErr) {
       console.warn("Direct YouTube API fetch warning:", directErr);
@@ -99,19 +128,24 @@ export const searchYouTubeVideos = async ({
 };
 
 /**
- * Get Trending videos from YouTube Data API v3 with browser fallback
+ * Get Trending videos from YouTube Data API v3 with browser fallback and instant cache
  */
 export const getYouTubeTrending = async ({
   regionCode = "IN",
   categoryId = "",
-  maxResults = 16,
+  maxResults = 20,
   pageToken = "",
 }) => {
+  const cacheKey = `trending_${regionCode}_${categoryId}_${pageToken}_${maxResults}`;
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
   try {
     const { data } = await api.get("/youtube/trending", {
       params: { regionCode, categoryId, maxResults, pageToken },
     });
     if (data && data.videos && data.videos.length > 0) {
+      setCached(cacheKey, data);
       return data;
     }
   } catch (backendErr) {
@@ -175,11 +209,13 @@ export const getYouTubeTrending = async ({
           };
         });
 
-        return {
+        const result = {
           videos,
           nextPageToken: ytJson.nextPageToken || null,
           totalResults: ytJson.pageInfo?.totalResults || videos.length,
         };
+        setCached(cacheKey, result);
+        return result;
       }
     } catch (err) {
       console.warn("Direct trending fetch warning:", err);
@@ -193,15 +229,22 @@ export const getYouTubeTrending = async ({
  * Get detailed video information and related recommendations
  */
 export const getYouTubeVideoDetails = async (videoId) => {
+  const cleanId = (videoId || "").replace(/^yt_/, "").trim();
+  const cacheKey = `video_detail_${cleanId}`;
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
   try {
     const { data } = await api.get(`/youtube/videos/${videoId}`);
-    if (data && data.video) return data;
+    if (data && data.video) {
+      setCached(cacheKey, data, 30 * 60 * 1000);
+      return data;
+    }
   } catch (err) {
     console.warn("Backend video details warning:", err);
   }
 
   // Direct fetch fallback for video details
-  const cleanId = (videoId || "").replace(/^yt_/, "").trim();
   if (cleanId && CLIENT_YOUTUBE_API_KEY) {
     try {
       const res = await fetch(
@@ -213,7 +256,7 @@ export const getYouTubeVideoDetails = async (videoId) => {
           const item = json.items[0];
           const snip = item.snippet;
           const stats = item.statistics || {};
-          return {
+          const result = {
             video: {
               _id: `yt_${item.id}`,
               youtubeVideoId: item.id,
@@ -249,6 +292,8 @@ export const getYouTubeVideoDetails = async (videoId) => {
             },
             related: [],
           };
+          setCached(cacheKey, result, 30 * 60 * 1000);
+          return result;
         }
       }
     } catch (err) {}
@@ -261,23 +306,39 @@ export const getYouTubeVideoDetails = async (videoId) => {
  * Get YouTube Channel details
  */
 export const getYouTubeChannelDetails = async (channelId) => {
-  const { data } = await api.get(`/youtube/channels/${channelId}`);
-  return data;
+  const cacheKey = `channel_${channelId}`;
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const { data } = await api.get(`/youtube/channels/${channelId}`);
+    if (data) setCached(cacheKey, data, 60 * 60 * 1000);
+    return data;
+  } catch (err) {
+    return null;
+  }
 };
 
 /**
  * Get YouTube Shorts feed dynamically
  */
 export const getYouTubeShorts = async ({
-  q = "shorts trending viral",
+  q = "#shorts trending viral",
   pageToken = "",
   maxResults = 20,
 } = {}) => {
+  const cacheKey = `shorts_${(q || "").trim()}_${pageToken}_${maxResults}`;
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
   try {
     const { data } = await api.get("/youtube/shorts", {
       params: { q, pageToken, maxResults },
     });
-    if (data && data.shorts && data.shorts.length > 0) return data;
+    if (data && data.shorts && data.shorts.length > 0) {
+      setCached(cacheKey, data);
+      return data;
+    }
   } catch (err) {}
 
   // Direct fetch fallback for shorts
@@ -313,7 +374,9 @@ export const getYouTubeShorts = async ({
             embedUrl: `https://www.youtube-nocookie.com/embed/${it.id.videoId}?autoplay=1&enablejsapi=1`,
             videoUrl: `https://www.youtube.com/watch?v=${it.id.videoId}`,
           }));
-        return { shorts, nextPageToken: json.nextPageToken || null };
+        const result = { shorts, nextPageToken: json.nextPageToken || null };
+        setCached(cacheKey, result);
+        return result;
       }
     } catch (err) {}
   }

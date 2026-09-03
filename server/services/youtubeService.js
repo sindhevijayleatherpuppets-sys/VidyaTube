@@ -45,6 +45,28 @@ const httpsGet = (urlStr) => {
 
 const YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3";
 
+// High-Speed In-Memory Cache with TTL (0ms latency, zero lag on repeated requests)
+const apiCache = new Map();
+const DEFAULT_TTL_MS = 25 * 60 * 1000; // 25 minutes
+
+const getFromCache = (key) => {
+  const item = apiCache.get(key);
+  if (!item) return null;
+  if (Date.now() > item.expiresAt) {
+    apiCache.delete(key);
+    return null;
+  }
+  return item.data;
+};
+
+const setInCache = (key, data, ttlMs = DEFAULT_TTL_MS) => {
+  if (apiCache.size > 800) {
+    const oldestKey = apiCache.keys().next().value;
+    apiCache.delete(oldestKey);
+  }
+  apiCache.set(key, { data, expiresAt: Date.now() + ttlMs });
+};
+
 /**
  * Get normalized API Key from process.env
  */
@@ -486,6 +508,10 @@ const formatYouTubeChannel = (item) => {
  * Search YouTube videos dynamically in REAL-TIME via YouTube Data API v3 (search.list + videos.list)
  */
 const searchVideos = async ({ q = "", pageToken = "", category = "", maxResults = 20, order = "relevance", type = "video" }) => {
+  const cacheKey = `search_${(q || "").toLowerCase().trim()}_${category}_${pageToken}_${type}_${order}_${maxResults}`;
+  const cached = getFromCache(cacheKey);
+  if (cached) return cached;
+
   const apiKey = getApiKey();
 
   if (!apiKey) {
@@ -552,12 +578,14 @@ const searchVideos = async ({ q = "", pageToken = "", category = "", maxResults 
         return formatYouTubeVideo(fullItem);
       });
 
-    return {
+    const result = {
       videos,
       nextPageToken: response.data.nextPageToken || null,
       prevPageToken: response.data.prevPageToken || null,
       totalResults: response.data.pageInfo?.totalResults || videos.length,
     };
+    setInCache(cacheKey, result);
+    return result;
   } catch (err) {
     console.error("searchVideos exception:", err.message);
     const curated = getCuratedVideosForQuery(q, category);
@@ -658,6 +686,10 @@ const getChannelDetails = async (channelId) => {
  * Get Trending / Most Popular videos via YouTube Data API v3 (videos.list)
  */
 const getTrendingVideos = async ({ regionCode = "IN", categoryId = "", maxResults = 20, pageToken = "" }) => {
+  const cacheKey = `trending_${regionCode}_${categoryId}_${pageToken}_${maxResults}`;
+  const cached = getFromCache(cacheKey);
+  if (cached) return cached;
+
   const apiKey = getApiKey();
 
   if (!apiKey) {
@@ -695,11 +727,13 @@ const getTrendingVideos = async ({ regionCode = "IN", categoryId = "", maxResult
     const items = response.data.items || [];
     const videos = items.map((item) => formatYouTubeVideo(item));
 
-    return {
+    const result = {
       videos,
       nextPageToken: response.data.nextPageToken || null,
       totalResults: response.data.pageInfo?.totalResults || videos.length,
     };
+    setInCache(cacheKey, result);
+    return result;
   } catch (err) {
     return {
       videos: [],
@@ -714,6 +748,10 @@ const getTrendingVideos = async ({ regionCode = "IN", categoryId = "", maxResult
  */
 const getVideoDetails = async (videoId) => {
   const cleanId = (videoId || "").replace(/^yt_/, "").trim();
+  const cacheKey = `video_${cleanId}`;
+  const cached = getFromCache(cacheKey);
+  if (cached) return cached;
+
   const apiKey = getApiKey();
 
   if (!apiKey || !cleanId) {
@@ -732,7 +770,9 @@ const getVideoDetails = async (videoId) => {
     const response = await httpsGet(url);
 
     if (response.statusCode === 200 && response.data.items?.length > 0) {
-      return formatYouTubeVideo(response.data.items[0]);
+      const formatted = formatYouTubeVideo(response.data.items[0]);
+      setInCache(cacheKey, formatted, 60 * 60 * 1000);
+      return formatted;
     }
   } catch (err) {
     console.warn("getVideoDetails warning:", err.message);
@@ -753,6 +793,10 @@ const getVideoDetails = async (videoId) => {
  * Get YouTube Shorts dynamically (videoDuration=short) with curated fallback
  */
 const getYouTubeShorts = async ({ q = "#shorts trending viral", pageToken = "", maxResults = 20 } = {}) => {
+  const cacheKey = `shorts_${(q || "").trim()}_${pageToken}_${maxResults}`;
+  const cached = getFromCache(cacheKey);
+  if (cached) return cached;
+
   const apiKey = getApiKey();
 
   if (apiKey) {
@@ -796,10 +840,12 @@ const getYouTubeShorts = async ({ q = "#shorts trending viral", pageToken = "", 
             return { ...v, isShort: true };
           });
 
-        return {
+        const result = {
           shorts,
           nextPageToken: response.data.nextPageToken || null,
         };
+        setInCache(cacheKey, result);
+        return result;
       }
     } catch (err) {
       console.warn("Live shorts fetch warning:", err.message);

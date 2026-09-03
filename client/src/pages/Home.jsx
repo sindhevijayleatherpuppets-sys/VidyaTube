@@ -4,8 +4,19 @@ import AppShell from "../components/AppShell.jsx";
 import VideoCard from "../components/VideoCard.jsx";
 import SkeletonCard from "../components/SkeletonCard.jsx";
 import { fetchVideos, fetchShorts, fetchRecommendations } from "../services/videoService";
+import { getYouTubeTrending, getYouTubeShorts } from "../services/youtubeService";
 import { useAuth } from "../context/AuthContext.jsx";
 import { CATEGORIES, mediaUrl, formatViews } from "../utils/format";
+
+const CATEGORY_MAP = {
+  Music: "10",
+  Gaming: "20",
+  News: "25",
+  Technology: "28",
+  Education: "27",
+  Entertainment: "24",
+  Sports: "17",
+};
 
 const Home = () => {
   const { user } = useAuth();
@@ -19,6 +30,7 @@ const Home = () => {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [nextPageToken, setNextPageToken] = useState(null);
   const [error, setError] = useState("");
   const observerRef = useRef(null);
 
@@ -32,15 +44,62 @@ const Home = () => {
   }, [search, category]);
 
   const loadInitial = useCallback(async () => {
-    setLoading(true);
+    // Only show full-screen skeletons if there are no videos yet
+    if (videos.length === 0) setLoading(true);
     setError("");
+
     try {
-      const [videoList, shortList] = await Promise.all([
-        fetchVideos({ category, search, isShort: false }),
-        fetchShorts(),
+      const categoryId = CATEGORY_MAP[category] || "";
+
+      // Fetch native database videos, native shorts, and real YouTube trending videos in parallel
+      const [videoList, shortList, trendingData, ytShortsData] = await Promise.all([
+        fetchVideos({ category, search, isShort: false }).catch(() => []),
+        fetchShorts().catch(() => []),
+        getYouTubeTrending({
+          regionCode: "IN",
+          categoryId,
+          maxResults: 24,
+        }).catch(() => ({ videos: [], nextPageToken: null })),
+        getYouTubeShorts().catch(() => ({ shorts: [] })),
       ]);
-      setVideos(videoList || []);
-      setShorts(shortList || []);
+
+      // Deduplicate by ID
+      const seenIds = new Set();
+      const combined = [];
+
+      // 1. Native / blockbuster videos first
+      for (const v of videoList || []) {
+        const idKey = v.youtubeVideoId || v._id;
+        if (!seenIds.has(idKey)) {
+          seenIds.add(idKey);
+          combined.push(v);
+        }
+      }
+
+      // 2. High-engagement trending YouTube videos (30+ total videos)
+      for (const v of trendingData.videos || []) {
+        const idKey = v.youtubeVideoId || v._id;
+        if (!seenIds.has(idKey)) {
+          seenIds.add(idKey);
+          combined.push(v);
+        }
+      }
+
+      // 3. Shorts feed combining native + dynamic YouTube shorts
+      const combinedShorts = [];
+      const seenShorts = new Set();
+      for (const s of [...(shortList || []), ...(ytShortsData.shorts || [])]) {
+        const idKey = s.youtubeVideoId || s._id;
+        if (!seenShorts.has(idKey)) {
+          seenShorts.add(idKey);
+          combinedShorts.push(s);
+        }
+      }
+
+      setVideos(combined);
+      setShorts(combinedShorts);
+      setNextPageToken(trendingData.nextPageToken || null);
+      setHasMore(true);
 
       if (user && !search && category === "All") {
         try {
@@ -53,7 +112,9 @@ const Home = () => {
         setRecommended([]);
       }
     } catch (err) {
-      setError("Could not load videos. Ensure backend server is active.");
+      if (videos.length === 0) {
+        setError("Could not load videos. Ensure backend server is active.");
+      }
     } finally {
       setLoading(false);
     }
@@ -63,24 +124,50 @@ const Home = () => {
     loadInitial();
   }, [loadInitial]);
 
-  // Infinite Scroll Observer
+  // Infinite Scroll Observer for Continuous Feed Without Lag
   const handleObserver = useCallback(
     (entries) => {
       const target = entries[0];
       if (target.isIntersecting && !loading && !loadingMore && hasMore && videos.length > 0) {
         setLoadingMore(true);
-        setTimeout(() => {
-          // Append next batch from existing feed to simulate continuous infinite stream
-          setVideos((prev) => [...prev, ...prev.slice(0, 4)]);
-          setLoadingMore(false);
-        }, 800);
+
+        const categoryId = CATEGORY_MAP[category] || "";
+        getYouTubeTrending({
+          regionCode: "IN",
+          categoryId,
+          maxResults: 12,
+          pageToken: nextPageToken || "",
+        })
+          .then((moreData) => {
+            if (moreData.videos && moreData.videos.length > 0) {
+              setVideos((prev) => {
+                const seen = new Set(prev.map((x) => x.youtubeVideoId || x._id));
+                const additions = moreData.videos.filter(
+                  (v) => !seen.has(v.youtubeVideoId || v._id)
+                );
+                return additions.length > 0 ? [...prev, ...additions] : prev;
+              });
+              setNextPageToken(moreData.nextPageToken || null);
+            } else {
+              setHasMore(false);
+            }
+          })
+          .catch(() => {
+            setHasMore(false);
+          })
+          .finally(() => {
+            setLoadingMore(false);
+          });
       }
     },
-    [loading, loadingMore, hasMore, videos.length]
+    [loading, loadingMore, hasMore, videos.length, nextPageToken, category]
   );
 
   useEffect(() => {
-    const observer = new IntersectionObserver(handleObserver, { threshold: 0.1 });
+    const observer = new IntersectionObserver(handleObserver, {
+      threshold: 0.1,
+      rootMargin: "200px",
+    });
     if (observerRef.current) observer.observe(observerRef.current);
     return () => observer.disconnect();
   }, [handleObserver]);
@@ -89,14 +176,20 @@ const Home = () => {
 
   return (
     <AppShell>
-      {/* Category Pills */}
+      {/* Category Pills with Instant Switch */}
       <div className="category-bar-wrapper">
         <div className="category-bar">
           {CATEGORIES.map((cat) => (
             <button
               key={cat}
               className={`category-chip${category === cat ? " active" : ""}`}
-              onClick={() => setCategory(cat)}
+              onClick={() => {
+                if (category !== cat) {
+                  setCategory(cat);
+                  setVideos([]);
+                  setLoading(true);
+                }
+              }}
             >
               {cat === "All" ? "✨ All" : cat}
             </button>
@@ -135,12 +228,12 @@ const Home = () => {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      {/* YouTube Shorts Shelf (Show on All / no search) */}
+      {/* YouTube Shorts Shelf */}
       {!search && category === "All" && shorts.length > 0 && (
         <div className="shorts-shelf-container">
           <div className="shorts-shelf-header">
             <span style={{ color: "var(--accent)", fontSize: "1.4rem" }}>⚡</span>
-            <span>YouTube Shorts</span>
+            <span>Trending Shorts</span>
             <Link
               to="/shorts"
               style={{
@@ -154,13 +247,14 @@ const Home = () => {
             </Link>
           </div>
           <div className="shorts-shelf-grid">
-            {shorts.slice(0, 6).map((short) => (
+            {shorts.slice(0, 8).map((short) => (
               <Link key={short._id} to={`/shorts?id=${short._id}`} className="short-card">
                 <div className="short-thumb-wrap">
                   <img
                     src={mediaUrl(short.thumbnailUrl)}
                     alt={short.title}
                     className="short-thumb"
+                    loading="lazy"
                   />
                   <span className="video-duration-badge" style={{ background: "var(--accent)" }}>
                     SHORT
@@ -188,9 +282,13 @@ const Home = () => {
         </>
       )}
 
-      {/* Main Video Feed with Skeleton Loading */}
+      {/* Main Video Feed with Infinite Scroll */}
       <h2 className="section-heading">
-        <span>{category === "All" ? "🔥 Latest Uploads" : `📁 ${category}`}</span>
+        <span>
+          {category === "All"
+            ? "🔥 Trending & Popular Videos"
+            : `📁 ${category} Feed`}
+        </span>
       </h2>
 
       {loading ? (
@@ -219,12 +317,20 @@ const Home = () => {
           </div>
 
           {/* Infinite Scroll Trigger & Skeleton */}
-          <div ref={observerRef} style={{ height: "40px", margin: "20px 0", textAlign: "center" }}>
+          <div
+            ref={observerRef}
+            style={{
+              height: "50px",
+              margin: "30px 0",
+              textAlign: "center",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
             {loadingMore && (
-              <div className="video-grid" style={{ marginTop: "16px" }}>
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <SkeletonCard key={i} />
-                ))}
+              <div style={{ color: "var(--text-muted)", fontSize: "0.95rem", fontWeight: 600 }}>
+                ⚡ Loading more videos...
               </div>
             )}
           </div>
