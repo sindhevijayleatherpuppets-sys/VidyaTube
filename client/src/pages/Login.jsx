@@ -20,9 +20,19 @@ const Login = () => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleQuickLogin = (email, password) => {
+  const handleQuickLogin = async (email, password) => {
     setForm({ email, password });
     setError("");
+    setSubmitting(true);
+    try {
+      const data = await loginUser({ email, password });
+      login(data.token, data.user);
+      navigate("/home", { replace: true });
+    } catch (err) {
+      setError(err.response?.data?.message || "Invalid email or password");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleSubmit = async (e) => {
