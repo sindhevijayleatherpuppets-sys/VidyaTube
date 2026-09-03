@@ -511,11 +511,15 @@ const searchVideos = async ({ q = "", pageToken = "", category = "", maxResults 
     const response = await httpsGet(url);
 
     if (response.statusCode !== 200) {
+      const errInfo = response.data?.error || {};
+      console.warn("YouTube API search warning:", response.statusCode, errInfo.message || response.raw);
       const curated = getCuratedVideosForQuery(q, category);
       return {
         videos: curated,
         nextPageToken: null,
         totalResults: curated.length,
+        error: errInfo.message || `YouTube API returned ${response.statusCode}`,
+        errorType: errInfo.errors?.[0]?.reason || `HTTP_${response.statusCode}`,
       };
     }
 
@@ -553,11 +557,14 @@ const searchVideos = async ({ q = "", pageToken = "", category = "", maxResults 
       totalResults: response.data.pageInfo?.totalResults || videos.length,
     };
   } catch (err) {
+    console.error("searchVideos exception:", err.message);
     const curated = getCuratedVideosForQuery(q, category);
     return {
       videos: curated,
       nextPageToken: null,
       totalResults: curated.length,
+      error: err.message,
+      errorType: "FETCH_EXCEPTION",
     };
   }
 };
