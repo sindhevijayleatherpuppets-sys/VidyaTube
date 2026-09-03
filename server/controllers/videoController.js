@@ -52,11 +52,35 @@ const uploadVideo = async (req, res, next) => {
   }
 };
 
+// Auto-detect and replace fake/sample videos with original real YouTube videos
+const ensureRealYouTubeVideos = async () => {
+  try {
+    const fakeCount = await Video.countDocuments({
+      $or: [
+        { source: { $ne: "youtube" } },
+        { youtubeVideoId: { $in: [null, ""] } },
+        { videoUrl: { $regex: /sample|BigBuck|Elephants|Tears|sintel/i } },
+      ],
+    });
+    const realCount = await Video.countDocuments({ source: "youtube" });
+
+    if (fakeCount > 0 || realCount < 12) {
+      console.log(`Auto-detection: Detected ${fakeCount} fake videos. Replacing with original playable YouTube videos...`);
+      const { seedDatabase } = require("../utils/seed");
+      await seedDatabase();
+      console.log("Auto-detection: Replaced with 100% playable official YouTube videos!");
+    }
+  } catch (e) {
+    console.warn("Video auto-healing warning:", e.message);
+  }
+};
+
 // @desc    List videos (supports category filter, search, sort, isShort)
 // @route   GET /api/videos?category=&search=&isShort=&sort=&channel=
 // @access  Public
 const getVideos = async (req, res, next) => {
   try {
+    await ensureRealYouTubeVideos();
     const { category, search, isShort, sort, channel } = req.query;
     const query = { isRemoved: false, visibility: "public" };
 

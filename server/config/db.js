@@ -4,11 +4,12 @@ let mongod = null;
 const autoSeedIfEmpty = async () => {
   try {
     const Video = require("../models/Video");
-    const count = await Video.countDocuments();
-    if (count === 0) {
+    const count = await Video.countDocuments({ source: "youtube" });
+    if (count < 12) {
+      console.log("Upgrading dataset to REAL YouTube top videos...");
       const { seedDatabase } = require("../utils/seed");
       await seedDatabase();
-      console.log("Auto-seeded complete VidyTube YouTube dataset!");
+      console.log("Auto-seeded complete VidyTube YouTube dataset with REAL YouTube videos!");
     }
   } catch (err) {
     console.warn("Auto-seed notice:", err.message);

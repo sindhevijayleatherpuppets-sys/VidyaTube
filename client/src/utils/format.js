@@ -1,7 +1,6 @@
-const SERVER_ORIGIN = (import.meta.env.VITE_API_URL || "http://localhost:5000/api").replace(
-  /\/api\/?$/,
-  ""
-);
+const SERVER_ORIGIN = (
+  import.meta.env.VITE_API_URL || "https://vidya-tube-app.onrender.com/api"
+).replace(/\/api\/?$/, "");
 
 // Video/thumbnail URLs can be relative or absolute external web URLs
 export const mediaUrl = (path) => {

@@ -133,7 +133,7 @@ const SearchResults = () => {
         </div>
 
         {/* API Key Missing Setup Guide Card */}
-        {isKeyMissing && !loading && (
+        {isKeyMissing && !loading && videos.length === 0 && (
           <div
             style={{
               background: "var(--bg-surface)",
@@ -196,7 +196,7 @@ const SearchResults = () => {
         )}
 
         {/* Quota or API Error Banner */}
-        {!isKeyMissing && errorType && (
+        {!isKeyMissing && errorType && videos.length === 0 && (
           <div className="alert alert-error" style={{ marginBottom: "24px", fontSize: "0.88rem" }}>
             <strong>{errorType === "QUOTA_EXCEEDED" ? "Daily API Quota Exceeded:" : "YouTube API Notice:"}</strong> {errorMessage}
           </div>
