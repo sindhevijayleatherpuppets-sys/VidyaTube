@@ -100,10 +100,15 @@ const getVideos = async (req, res, next) => {
 
     let videosQuery;
     if (search && search.trim()) {
-      query.$text = { $search: search.trim() };
-      videosQuery = Video.find(query, { score: { $meta: "textScore" } }).sort({
-        score: { $meta: "textScore" },
-      });
+      const s = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      videosQuery = Video.find({
+        ...query,
+        $or: [
+          { title: { $regex: s, $options: "i" } },
+          { description: { $regex: s, $options: "i" } },
+          { tags: { $regex: s, $options: "i" } },
+        ],
+      }).sort({ views: -1 });
     } else {
       let sortCriteria = { createdAt: -1 };
       if (sort === "views" || sort === "popular") {

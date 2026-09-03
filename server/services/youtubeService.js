@@ -1,26 +1,43 @@
-const https = require("https");
-
-// Fetch helper with promise and timeout
-const httpsGet = (url) => {
+// Fetch helper with promise, timeout, and required Referer for Google Cloud API Key
+const httpsGet = (urlStr) => {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, (res) => {
-      let data = "";
-      res.on("data", (chunk) => (data += chunk));
-      res.on("end", () => {
-        try {
-          const parsed = JSON.parse(data);
-          resolve({ statusCode: res.statusCode, data: parsed });
-        } catch (e) {
-          resolve({ statusCode: res.statusCode, raw: data });
-        }
-      });
-    });
+    try {
+      const parsedUrl = new URL(urlStr);
+      const options = {
+        hostname: parsedUrl.hostname,
+        port: 443,
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: "GET",
+        headers: {
+          Referer: "https://vidya-tube-app.vercel.app/",
+          Origin: "https://vidya-tube-app.vercel.app",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          Accept: "application/json",
+        },
+      };
 
-    req.on("error", reject);
-    req.setTimeout(8000, () => {
-      req.destroy();
-      reject(new Error("YouTube API request timed out"));
-    });
+      const req = https.request(options, (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          try {
+            const parsed = JSON.parse(data);
+            resolve({ statusCode: res.statusCode, data: parsed });
+          } catch (e) {
+            resolve({ statusCode: res.statusCode, raw: data });
+          }
+        });
+      });
+
+      req.on("error", reject);
+      req.setTimeout(10000, () => {
+        req.destroy();
+        reject(new Error("YouTube API request timed out"));
+      });
+      req.end();
+    } catch (err) {
+      reject(err);
+    }
   });
 };
 
@@ -276,6 +293,54 @@ const CURATED_TOP_VIDEOS = [
     category: "Education",
     tags: ["cs50", "harvard", "coding", "education", "programming"],
   },
+  {
+    videoId: "_uQrJ0TkZlc",
+    title: "Python Full Course for Beginners [2026 Tutorial]",
+    description: "Complete Python tutorial for beginners! Learn Python programming from scratch with variables, functions, loops, OOP, and real-world projects with Mosh.",
+    channelTitle: "Programming with Mosh",
+    channelId: "UCWv7vMbMWH4-V0ZXdm8mkNw",
+    views: 48800000,
+    likeCount: 1750000,
+    duration: "06:14:07",
+    category: "Education",
+    tags: ["python", "python course", "learn python", "coding", "programming", "python tutorial", "software development"],
+  },
+  {
+    videoId: "kqtD5dpn9C8",
+    title: "Python for Beginners - Learn Coding with Python in 1 Hour",
+    description: "This Python tutorial for beginners will help you learn Python programming quickly. Python step-by-step with practical hands-on examples.",
+    channelTitle: "Programming with Mosh",
+    channelId: "UCWv7vMbMWH4-V0ZXdm8mkNw",
+    views: 25100000,
+    likeCount: 890000,
+    duration: "01:00:15",
+    category: "Education",
+    tags: ["python", "learn python", "python 1 hour", "programming", "coding", "tutorial"],
+  },
+  {
+    videoId: "UrsmFxEIp5k",
+    title: "Python Tutorial For Beginners in Hindi | Complete Python Course 🔥",
+    description: "Master Python programming in Hindi! Complete roadmap from basic syntax to advanced OOP, data structures, and Python interview questions.",
+    channelTitle: "CodeWithHarry",
+    channelId: "UCeVMnSShP_Iviwkknt83cww",
+    views: 23800000,
+    likeCount: 1150000,
+    duration: "10:53:55",
+    category: "Education",
+    tags: ["python", "python in hindi", "codewithharry", "programming", "learn python", "python course"],
+  },
+  {
+    videoId: "PkZNo7MFNFg",
+    title: "Learn JavaScript - Full Course for Beginners",
+    description: "This complete 134-part JavaScript tutorial for beginners will teach you everything you need to know to get started with the JavaScript language.",
+    channelTitle: "freeCodeCamp.org",
+    channelId: "UC8butISFwT-Wl7EV0hUK0BQ",
+    views: 19000000,
+    likeCount: 520000,
+    duration: "03:26:42",
+    category: "Education",
+    tags: ["javascript", "js", "web development", "coding", "programming", "frontend"],
+  },
 ];
 
 const formatCuratedVideo = (item) => ({
@@ -309,15 +374,14 @@ const formatCuratedVideo = (item) => ({
 
 const getCuratedVideosForQuery = (query = "", category = "") => {
   const q = (query || "").toLowerCase().trim();
+  const keywords = q.split(/\s+/).filter(Boolean);
+
   let matches = CURATED_TOP_VIDEOS;
 
-  if (q) {
+  if (keywords.length > 0) {
     matches = CURATED_TOP_VIDEOS.filter((v) => {
-      const inTitle = v.title.toLowerCase().includes(q);
-      const inDesc = v.description.toLowerCase().includes(q);
-      const inTags = v.tags.some((t) => t.toLowerCase().includes(q));
-      const inChannel = v.channelTitle.toLowerCase().includes(q);
-      return inTitle || inDesc || inTags || inChannel;
+      const searchTarget = `${v.title} ${v.description} ${v.tags.join(" ")} ${v.channelTitle} ${v.category}`.toLowerCase();
+      return keywords.some((kw) => searchTarget.includes(kw));
     });
   }
 
@@ -326,8 +390,9 @@ const getCuratedVideosForQuery = (query = "", category = "") => {
     if (catMatches.length > 0) matches = catMatches;
   }
 
-  if (matches.length === 0) {
-    matches = CURATED_TOP_VIDEOS;
+  // If specific query was searched but no matches found, do NOT dump all movie trailers!
+  if (q && matches.length === 0) {
+    return [];
   }
 
   return matches.map(formatCuratedVideo);
